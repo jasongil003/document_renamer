@@ -1,0 +1,2014 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Document Rename</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+
+<style>
+:root{
+    --bg:#f4f7fb;
+    --panel:#ffffff;
+    --panel-soft:#f8fbff;
+    --text:#0f172a;
+    --muted:#64748b;
+    --line:#dbe5f0;
+    --line-strong:#c7d6e6;
+    --shadow:0 18px 50px rgba(15,23,42,0.08);
+    --blue:#2563eb;
+    --blue-soft:#e8f1ff;
+    --green:#16a34a;
+    --green-soft:#dcfce7;
+    --red:#dc2626;
+    --red-soft:#fee2e2;
+    --amber:#d97706;
+    --amber-soft:#fef3c7;
+    --violet:#7c3aed;
+    --violet-soft:#efe7ff;
+    --slate:#475569;
+}
+*{
+    box-sizing:border-box;
+}
+html,body{
+    margin:0;
+    min-height:100%;
+    font-family:Inter,Arial,sans-serif;
+    color:var(--text);
+    background:
+        radial-gradient(circle at top left, rgba(37,99,235,0.08), transparent 24%),
+        radial-gradient(circle at top right, rgba(124,58,237,0.08), transparent 20%),
+        linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%);
+}
+body{
+    padding:28px;
+}
+.shell{
+    max-width:1480px;
+    margin:0 auto;
+}
+.hero{
+    background:linear-gradient(135deg, #0a3f03 0%, #19c35d 60%, #1f3f1f 100%);
+    color:#fff;
+    border-radius:28px;
+    padding:28px;
+    box-shadow:var(--shadow);
+    position:relative;
+    overflow:hidden;
+}
+.hero:before{
+    content:"";
+    position:absolute;
+    inset:auto -120px -120px auto;
+    width:260px;
+    height:260px;
+    border-radius:50%;
+    background:rgba(255,255,255,0.08);
+}
+.hero-grid{
+    display:grid;
+    grid-template-columns:1.6fr 1fr;
+    gap:20px;
+    align-items:end;
+    position:relative;
+    z-index:1;
+}
+.hero h1{
+    margin:0;
+    font-size:32px;
+    line-height:1.1;
+    letter-spacing:-0.02em;
+}
+.hero p{
+    margin:10px 0 0 0;
+    color:rgba(255,255,255,0.78);
+    font-size:14px;
+}
+.hero-pills{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    justify-content:flex-end;
+}
+.hero-pill{
+    padding:10px 14px;
+    border-radius:999px;
+    background:rgba(255,255,255,0.12);
+    border:1px solid rgba(255,255,255,0.16);
+    font-size:12px;
+    font-weight:700;
+    letter-spacing:0.02em;
+    white-space:nowrap;
+}
+.panel{
+    margin-top:20px;
+    background:rgba(255,255,255,0.8);
+    backdrop-filter:blur(10px);
+    border:1px solid rgba(219,229,240,0.8);
+    border-radius:24px;
+    box-shadow:var(--shadow);
+    overflow:hidden;
+}
+.panel-inner{
+    padding:22px;
+}
+.controls{
+    display:grid;
+    grid-template-columns:2fr 1fr 1fr auto;
+    gap:16px;
+    align-items:end;
+}
+.control{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+}
+label{
+    font-size:12px;
+    font-weight:800;
+    color:#334155;
+    letter-spacing:0.03em;
+    text-transform:uppercase;
+}
+input[type="file"],
+select,
+input[type="number"],
+input[type="text"]{
+    width:100%;
+    min-height:48px;
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:12px 14px;
+    background:#fff;
+    color:var(--text);
+    font-size:14px;
+    outline:none;
+    transition:border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+input[type="file"]:focus,
+select:focus,
+input[type="number"]:focus,
+input[type="text"]:focus{
+    border-color:#8fb3ff;
+    box-shadow:0 0 0 4px rgba(37,99,235,0.12);
+}
+.actions{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    margin-top:18px;
+}
+button{
+    border:none;
+    min-height:46px;
+    padding:12px 18px;
+    border-radius:14px;
+    cursor:pointer;
+    font-size:14px;
+    font-weight:800;
+    transition:transform .15s ease, box-shadow .15s ease, opacity .15s ease;
+    box-shadow:0 10px 22px rgba(15,23,42,0.08);
+}
+button:hover{
+    transform:translateY(-1px);
+}
+button:active{
+    transform:translateY(0);
+}
+.primary{ background:linear-gradient(135deg, #2563eb, #1d4ed8); color:#fff; }
+.green{ background:linear-gradient(135deg, #16a34a, #15803d); color:#fff; }
+.purple{ background:linear-gradient(135deg, #7c3aed, #6d28d9); color:#fff; }
+.gray{ background:linear-gradient(135deg, #64748b, #475569); color:#fff; }
+
+.dropzone{
+    margin-top:18px;
+    border:2px dashed #bcd0ea;
+    border-radius:22px;
+    padding:26px;
+    text-align:center;
+    background:linear-gradient(180deg, #ffffff, #f8fbff);
+    transition:.18s ease;
+}
+.dropzone.dragover{
+    border-color:var(--blue);
+    background:var(--blue-soft);
+    transform:scale(1.003);
+}
+.dropzone-title{
+    font-size:18px;
+    font-weight:800;
+}
+.dropzone-subtitle{
+    margin-top:8px;
+    color:var(--muted);
+    font-size:13px;
+}
+.helper-note{
+    margin-top:12px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+}
+.note-chip{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 12px;
+    border-radius:999px;
+    background:#f8fafc;
+    border:1px solid var(--line);
+    color:#334155;
+    font-size:12px;
+    font-weight:700;
+}
+
+.summary-grid{
+    display:grid;
+    grid-template-columns:repeat(4, minmax(0, 1fr));
+    gap:14px;
+    margin-top:20px;
+}
+.stat-card{
+    background:linear-gradient(180deg, #ffffff, #f8fbff);
+    border:1px solid var(--line);
+    border-radius:20px;
+    padding:18px;
+}
+.stat-label{
+    font-size:12px;
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+    font-weight:800;
+}
+.stat-value{
+    margin-top:8px;
+    font-size:30px;
+    font-weight:900;
+    letter-spacing:-0.03em;
+}
+.stat-sub{
+    margin-top:4px;
+    font-size:12px;
+    color:var(--muted);
+}
+
+.progress-card{
+    margin-top:20px;
+    background:linear-gradient(180deg, #ffffff, #f8fbff);
+    border:1px solid var(--line);
+    border-radius:20px;
+    padding:18px;
+}
+.progress-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+}
+.progress-text{
+    font-size:13px;
+    color:#334155;
+    font-weight:700;
+}
+.progressbar{
+    margin-top:12px;
+    height:12px;
+    background:#e8eef7;
+    border-radius:999px;
+    overflow:hidden;
+}
+.progressfill{
+    height:100%;
+    width:0%;
+    background:linear-gradient(90deg, #2563eb, #7c3aed);
+    transition:width .22s ease;
+    border-radius:999px;
+}
+
+.table-card{
+    margin-top:20px;
+    border:1px solid var(--line);
+    border-radius:22px;
+    overflow:hidden;
+    background:#fff;
+}
+.table-toolbar{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+    padding:16px 18px;
+    background:linear-gradient(180deg, #ffffff, #f8fbff);
+    border-bottom:1px solid var(--line);
+}
+.table-title{
+    font-size:15px;
+    font-weight:900;
+}
+.table-subtitle{
+    font-size:12px;
+    color:var(--muted);
+    margin-top:4px;
+}
+.legend{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+}
+.legend-chip{
+    padding:8px 11px;
+    border-radius:999px;
+    font-size:12px;
+    font-weight:800;
+    border:1px solid var(--line);
+    background:#fff;
+}
+.table-wrap{
+    overflow:auto;
+    max-height:68vh;
+}
+table{
+    width:100%;
+    border-collapse:separate;
+    border-spacing:0;
+    min-width:1200px;
+}
+th{
+    position:sticky;
+    top:0;
+    z-index:2;
+    background:#f8fbff;
+    text-align:left;
+    padding:14px 12px;
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:0.03em;
+    color:#475569;
+    border-bottom:1px solid var(--line);
+}
+td{
+    padding:12px;
+    border-bottom:1px solid #eef4fa;
+    vertical-align:top;
+    font-size:13px;
+    background:#fff;
+}
+tbody tr:hover td{
+    background:#fbfdff;
+}
+.badge{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:6px 10px;
+    border-radius:999px;
+    font-size:12px;
+    font-weight:900;
+    line-height:1;
+    white-space:nowrap;
+}
+.success{
+    background:var(--green-soft);
+    color:#166534;
+}
+.fail{
+    background:var(--red-soft);
+    color:#991b1b;
+}
+.scan{
+    background:var(--blue-soft);
+    color:#1d4ed8;
+}
+.warning{
+    background:var(--amber-soft);
+    color:#92400e;
+}
+.info{
+    background:var(--violet-soft);
+    color:#6d28d9;
+}
+.small{
+    font-size:12px;
+    color:var(--muted);
+}
+.failed-row td{
+    background:#fff8f8;
+}
+.reason-cell{
+    min-width:280px;
+    max-width:360px;
+    white-space:normal;
+    color:#475569;
+}
+.cell-input{
+    width:150px;
+}
+.output-input{
+    width:270px;
+}
+.type-select{
+    min-width:96px;
+}
+.preview-button,
+.filename-link{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    text-decoration:none;
+    font-weight:800;
+}
+.preview-button{
+    background:var(--blue-soft);
+    color:#1d4ed8;
+    padding:8px 12px;
+    border-radius:10px;
+    border:1px solid #cfe0ff;
+}
+.filename-link{
+    color:#1d4ed8;
+}
+.stack-notes{
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+}
+.note-pill{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:6px 10px;
+    border-radius:999px;
+    font-size:11px;
+    font-weight:800;
+    border:1px solid transparent;
+}
+.note-year-warning{
+    background:var(--amber-soft);
+    color:#92400e;
+    border-color:#f7df97;
+}
+.note-manual{
+    background:#eef2ff;
+    color:#4338ca;
+    border-color:#d8ddff;
+}
+.note-ocr{
+    background:#eff6ff;
+    color:#1d4ed8;
+    border-color:#d9e8ff;
+}
+.reason-text{
+    margin-top:6px;
+    line-height:1.45;
+}
+.empty-state{
+    padding:28px;
+    color:var(--muted);
+    text-align:center;
+    font-size:13px;
+}
+
+@media (max-width:1100px){
+    .hero-grid,
+    .controls,
+    .summary-grid{
+        grid-template-columns:1fr;
+    }
+    .hero-pills{
+        justify-content:flex-start;
+    }
+}
+@media (max-width:720px){
+    body{
+        padding:16px;
+    }
+    .panel-inner,
+    .hero{
+        padding:18px;
+    }
+    .hero h1{
+        font-size:26px;
+    }
+}
+</style>
+</head>
+<body>
+
+<div class="shell">
+    <section class="hero">
+        <div class="hero-grid">
+            <div>
+                <h1>Smart Document Renamer</h1>
+                <p>Scan EDR, SI, SS, and DR files, review the detected values, then export the renamed batch.</p>
+            </div>
+            <div class="hero-pills">
+                <div class="hero-pill">PDF + Image OCR</div>
+                <div class="hero-pill">Editable Output</div>
+                <div class="hero-pill">Year Mismatch Flag</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-inner">
+            <div class="controls">
+                <div class="control">
+                    <label for="files">Upload Files</label>
+                    <input type="file" id="files" multiple accept=".pdf,.jpg,.jpeg,.png">
+                </div>
+
+                <div class="control">
+                    <label for="docType">Type of File</label>
+                    <select id="docType">
+                        <option value="ANY">Any</option>
+                        <option value="EDR">EDR</option>
+                        <option value="SI">SI</option>
+                        <option value="SS">SS</option>
+                        <option value="DR">DR</option>
+                    </select>
+                </div>
+
+                <div class="control">
+                    <label for="fileYear">Year</label>
+                    <input type="number" id="fileYear" value="2026" min="2000" max="2100">
+                </div>
+
+                <div class="control">
+                    <label>&nbsp;</label>
+                    <button class="primary" onclick="startProcess()">Start Scan</button>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button class="green" onclick="downloadZip()">Download ZIP</button>
+                <button class="purple" onclick="downloadExcel()">Download Excel</button>
+                <button class="gray" onclick="clearFiles()">Clear Files</button>
+            </div>
+
+            <div class="dropzone" id="dropzone">
+                <div class="dropzone-title">Drag and drop PDF or image files here</div>
+                <div class="dropzone-subtitle">Supported formats: PDF, JPG, JPEG, PNG</div>
+            </div>
+
+            <div class="helper-note">
+                <div class="note-chip">Press Enter inside Detected Number to jump to the next row</div>
+                <div class="note-chip">Rows stay editable before export</div>
+                <div class="note-chip">Detected years are checked against the selected year</div>
+            </div>
+
+            <div class="summary-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Loaded Files</div>
+                    <div class="stat-value" id="loadedCount">0</div>
+                    <div class="stat-sub">Current batch</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Ready</div>
+                    <div class="stat-value" id="successCount">0</div>
+                    <div class="stat-sub">Exportable rows</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Failed</div>
+                    <div class="stat-value" id="failedCount">0</div>
+                    <div class="stat-sub">Needs review</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Year Flags</div>
+                    <div class="stat-value" id="yearFlagCount">0</div>
+                    <div class="stat-sub">Mismatched year found</div>
+                </div>
+            </div>
+
+            <div class="progress-card">
+                <div class="progress-head">
+                    <div class="progress-text" id="progressText">Ready</div>
+                    <div class="small" id="progressPercent">0%</div>
+                </div>
+                <div class="progressbar">
+                    <div class="progressfill" id="progress"></div>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <div class="table-toolbar">
+                    <div>
+                        <div class="table-title">Scan Results</div>
+                        <div class="table-subtitle">Review rows before ZIP or Excel export.</div>
+                    </div>
+                    <div class="legend">
+                        <div class="legend-chip">Ready</div>
+                        <div class="legend-chip">Failed</div>
+                        <div class="legend-chip">Year Flag</div>
+                    </div>
+                </div>
+
+                <div class="table-wrap">
+                    <table id="table">
+                        <thead>
+                            <tr>
+                                <th>Original File</th>
+                                <th>Preview</th>
+                                <th>Detected Number</th>
+                                <th>Output Name</th>
+                                <th>Integrity</th>
+                                <th>Status</th>
+                                <th>Detected Type</th>
+                                <th>Reason / Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="8" class="empty-state">No files processed yet.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+let files = [];
+let results = [];
+let isProcessing = false;
+
+const dropzone = document.getElementById("dropzone");
+
+dropzone.addEventListener("dragover", e => {
+    e.preventDefault();
+    dropzone.classList.add("dragover");
+});
+
+dropzone.addEventListener("dragleave", () => {
+    dropzone.classList.remove("dragover");
+});
+
+dropzone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropzone.classList.remove("dragover");
+    addFiles(e.dataTransfer.files);
+});
+
+document.getElementById("files").addEventListener("change", function(){
+    addFiles(this.files);
+});
+
+function getTableBody(){
+    return document.querySelector("#table tbody");
+}
+
+function renderEmptyState(){
+    const tbody = getTableBody();
+    if(results.length === 0){
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No files processed yet.</td></tr>';
+    }
+}
+
+function addFiles(fileList){
+    const seen = new Set(files.map(file => `${file.name}_${file.size}_${file.lastModified}`));
+    for(let i = 0; i < fileList.length; i++){
+        const file = fileList[i];
+        const key = `${file.name}_${file.size}_${file.lastModified}`;
+        if((file.type === "application/pdf" || file.type.startsWith("image/")) && !seen.has(key)){
+            files.push(file);
+            seen.add(key);
+        }
+    }
+    updateLoadedCount();
+}
+
+function clearFiles(){
+    if(isProcessing){
+        alert("Processing is still running. Please wait until it completes.");
+        return;
+    }
+    files = [];
+    results = [];
+    getTableBody().innerHTML = "";
+    renderEmptyState();
+    setProgress(0, "Ready");
+    document.getElementById("loadedCount").innerText = "0";
+    document.getElementById("successCount").innerText = "0";
+    document.getElementById("failedCount").innerText = "0";
+    document.getElementById("yearFlagCount").innerText = "0";
+    document.getElementById("files").value = "";
+}
+
+function updateLoadedCount(){
+    document.getElementById("loadedCount").innerText = files.length;
+}
+
+function updateSummary(){
+    const success = results.filter(r => isRowExportable(r)).length;
+    const failed = results.length - success;
+    const yearFlags = results.filter(r => r && r.yearFlag && r.yearFlag.hasMismatch).length;
+    document.getElementById("successCount").innerText = success;
+    document.getElementById("failedCount").innerText = failed;
+    document.getElementById("yearFlagCount").innerText = yearFlags;
+}
+
+function setProgress(percent, text){
+    const safePercent = Math.max(0, Math.min(100, percent || 0));
+    document.getElementById("progress").style.width = safePercent + "%";
+    document.getElementById("progressPercent").innerText = Math.round(safePercent) + "%";
+    document.getElementById("progressText").innerText = text || "Ready";
+}
+
+function normalizeText(text){
+    return text
+        .replace(/\r/g, " ")
+        .replace(/\n/g, " ")
+        .replace(/\s+/g, " ")
+        .replace(/ftDR/gi, "EDR")
+        .replace(/\.4DR/gi, "EDR")
+        .replace(/,4DR/gi, "EDR")
+        .replace(/\b4DR/gi, "EDR")
+        .replace(/\bADR\b/gi, "EDR")
+        .replace(/\bSl\s*No\b/gi, "SI No")
+        .replace(/\bS1\s*No\b/gi, "SI No")
+        .replace(/\bSI\s*No\b/gi, "SI No")
+        .replace(/\bD[R8](?=\d)/gi, "DR")
+        .trim();
+}
+
+function normalizeInvoiceToken(token){
+    return token
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "")
+        .replace(/^55/, "SS")
+        .replace(/^58/, "SS")
+        .replace(/^5S/, "SS")
+        .replace(/^S5/, "SS")
+        .replace(/^S8/, "SS")
+        .replace(/^S9/, "SS")
+        .replace(/^S1/, "SI")
+        .replace(/^SL/, "SI");
+}
+
+function onlyDigits(value){
+    return String(value || "").replace(/\D/g, "");
+}
+
+function generateDigitConfusionVariants(digits, maxChanges = 1){
+    const confusionMap = {
+        "2": ["8"],
+        "5": ["6"],
+        "6": ["5"],
+        "8": ["2"],
+        "S": ["5"],
+        "B": ["8"]
+    };
+
+    const seed = String(digits || "");
+    const results = new Set([seed]);
+
+    function walk(current, startIndex, changesLeft){
+        if(changesLeft <= 0){
+            return;
+        }
+
+        for(let i = startIndex; i < current.length; i++){
+            const alternatives = confusionMap[current[i]] || [];
+            for(const alt of alternatives){
+                const next = current.slice(0, i) + alt + current.slice(i + 1);
+                if(!results.has(next)){
+                    results.add(next);
+                    walk(next, i + 1, changesLeft - 1);
+                }
+            }
+        }
+    }
+
+    walk(seed, 0, maxChanges);
+    return Array.from(results);
+}
+
+function chooseBestDigitCandidate(digits, type){
+    const original = onlyDigits(digits);
+    const variants = generateDigitConfusionVariants(original, type === "SS" ? 2 : 1);
+    const candidates = [];
+
+    for(const variant of variants){
+        let score = 0;
+        const clean = onlyDigits(variant);
+
+        if(!clean){
+            continue;
+        }
+
+        if(clean === original){
+            score += 6;
+        }
+
+        if(type === "SS"){
+            if(/^4\d{8}$/.test(clean)) score += 60;
+            else if(/^\d{9}$/.test(clean)) score += 20;
+
+            if(clean[0] === "4") score += 20;
+            if(clean.startsWith("41")) score += 10;
+        }else if(type === "DR"){
+            if(/^\d{9}$/.test(clean)) score += 60;
+        }else if(type === "SI" || type === "EDR"){
+            if(/^\d{6,12}$/.test(clean)) score += 40;
+        }else {
+            if(/^\d+$/.test(clean)) score += 20;
+        }
+
+        let changedCount = 0;
+        for(let i = 0; i < clean.length; i++){
+            if(clean[i] !== original[i]){
+                changedCount += 1;
+
+                if(original[i] === "6" && clean[i] === "5"){
+                    score -= 5;
+                }
+                if(original[i] === "5" && clean[i] === "6"){
+                    score -= 2;
+                }
+            }
+        }
+
+        score -= changedCount * 3;
+
+        candidates.push({ clean, score });
+    }
+
+    candidates.sort((a, b) => {
+        if(b.score !== a.score) return b.score - a.score;
+        return a.clean.localeCompare(b.clean);
+    });
+    return candidates.length ? candidates[0].clean : original;
+}
+
+function repairDigitsByType(value, type){
+    let digits = chooseBestDigitCandidate(onlyDigits(value), type);
+
+    if(!digits){
+        return "";
+    }
+
+    if(type === "SS"){
+        if(digits.length === 8){
+            digits = "4" + digits;
+        }
+        if(digits.length === 9 && digits[0] !== "4"){
+            digits = "4" + digits.slice(1);
+        }
+        if(digits.length > 9){
+            const nineGroups = digits.match(/4\d{8}/g);
+            if(nineGroups && nineGroups.length){
+                return nineGroups[0];
+            }
+            digits = digits.slice(-9);
+            if(digits[0] !== "4"){
+                digits = "4" + digits.slice(1);
+            }
+        }
+    }
+
+    if(type === "DR"){
+        const nineGroups = digits.match(/\d{9}/g);
+        if(nineGroups && nineGroups.length){
+            return nineGroups[0];
+        }
+    }
+
+    return digits;
+}
+
+function buildIntegrityMeta(score, level, source, matchedCount, candidateCount, values, warnings){
+    return {
+        score: Math.max(0, Math.min(100, Math.round(score || 0))),
+        level: level || "Low",
+        source: source || "OCR",
+        matchedCount: matchedCount || 0,
+        candidateCount: candidateCount || 0,
+        values: Array.isArray(values) ? values : [],
+        warnings: Array.isArray(warnings) ? warnings : []
+    };
+}
+
+function getIntegrityLabelClass(integrity){
+    const level = String(integrity && integrity.level || "").toLowerCase();
+    if(level === "high") return "integrity-badge integrity-high";
+    if(level === "medium") return "integrity-badge integrity-medium";
+    if(level === "low") return "integrity-badge integrity-low";
+    return "integrity-badge integrity-empty";
+}
+
+function buildIntegrityHtml(integrity){
+    if(!integrity || !integrity.level){
+        return '<span class="integrity-badge integrity-empty">N/A</span>';
+    }
+    const titleParts = [];
+    if(integrity.source) titleParts.push(`Source: ${integrity.source}`);
+    if(Number.isFinite(integrity.matchedCount) && Number.isFinite(integrity.candidateCount) && integrity.candidateCount > 0){
+        titleParts.push(`Match: ${integrity.matchedCount}/${integrity.candidateCount}`);
+    }
+    if(integrity.values && integrity.values.length){
+        titleParts.push(`Seen: ${integrity.values.join(', ')}`);
+    }
+    if(integrity.warnings && integrity.warnings.length){
+        titleParts.push(`Review: ${integrity.warnings.join(', ')}`);
+    }
+    const title = escapeHtml(titleParts.join(' | '));
+    return `<span class="${getIntegrityLabelClass(integrity)}" title="${title}">${escapeHtml(integrity.level)} ${escapeHtml(String(integrity.score || 0))}%</span>`;
+}
+
+function getExpectedDigitLength(type, number){
+    if(type === "SS" || type === "DR") return 9;
+    if(type === "SI" || type === "EDR"){
+        const len = String(number || "").replace(/\D/g, "").length;
+        if(len >= 6 && len <= 12) return len;
+    }
+    return 0;
+}
+
+function getDigitVoteMeta(candidates, selectedType){
+    const valid = (candidates || []).filter(candidate => candidate && candidate.number);
+    if(!valid.length){
+        return null;
+    }
+
+    const typeCounts = new Map();
+    valid.forEach(candidate => {
+        const type = candidate.detectedType || selectedType || "";
+        typeCounts.set(type, (typeCounts.get(type) || 0) + 1);
+    });
+
+    const dominantType = Array.from(typeCounts.entries()).sort((a, b) => b[1] - a[1])[0][0] || (selectedType === "ANY" ? "" : selectedType);
+    const dominantCandidates = valid.filter(candidate => (candidate.detectedType || selectedType || "") === dominantType);
+    if(!dominantCandidates.length){
+        return null;
+    }
+
+    const lengthCounts = new Map();
+    dominantCandidates.forEach(candidate => {
+        const length = getExpectedDigitLength(dominantType, candidate.number) || String(candidate.number || "").replace(/\D/g, "").length;
+        if(length > 0){
+            lengthCounts.set(length, (lengthCounts.get(length) || 0) + 1);
+        }
+    });
+
+    const targetLength = lengthCounts.size
+        ? Number(Array.from(lengthCounts.entries()).sort((a, b) => b[1] - a[1])[0][0])
+        : 0;
+
+    const pool = dominantCandidates
+        .map(candidate => ({ ...candidate, digits: String(candidate.number || "").replace(/\D/g, "") }))
+        .filter(candidate => candidate.digits && (!targetLength || candidate.digits.length === targetLength));
+
+    if(!pool.length){
+        return null;
+    }
+
+    const votedDigits = [];
+    const warnings = [];
+    let supportedPositions = 0;
+
+    for(let index = 0; index < targetLength; index++){
+        const digitCounts = new Map();
+        pool.forEach(candidate => {
+            const digit = candidate.digits[index];
+            if(digit){
+                digitCounts.set(digit, (digitCounts.get(digit) || 0) + 1);
+            }
+        });
+
+        const sortedDigits = Array.from(digitCounts.entries()).sort((a, b) => b[1] - a[1]);
+        if(!sortedDigits.length){
+            votedDigits.push("0");
+            warnings.push(`P${index + 1} unclear`);
+            continue;
+        }
+
+        const [topDigit, topCount] = sortedDigits[0];
+        const secondCount = sortedDigits[1] ? sortedDigits[1][1] : 0;
+        votedDigits.push(topDigit);
+        supportedPositions += topCount;
+
+        if(secondCount > 0){
+            warnings.push(`P${index + 1}: ${sortedDigits.map(([digit, count]) => `${digit}x${count}`).join("/")}`);
+        }
+    }
+
+    let votedNumber = votedDigits.join("");
+    if(votedNumber){
+        votedNumber = repairDigitsByType(votedNumber, dominantType || selectedType);
+    }
+
+    return {
+        detectedType: dominantType,
+        number: votedNumber,
+        reason: `Digit voting from ${pool.length} OCR passes`,
+        voteCount: pool.length,
+        targetLength,
+        warnings,
+        positionSupport: targetLength ? supportedPositions / targetLength : 0,
+        values: pool.map(candidate => candidate.digits)
+    };
+}
+
+function evaluateIntegrityFromTexts(texts, selectedType){
+    const rawCandidates = [];
+
+    for(const text of texts || []){
+        if(!text) continue;
+        const found = detectTypeAndNumber(text, selectedType);
+        if(found && found.number){
+            rawCandidates.push(found);
+        }
+    }
+
+    if(!rawCandidates.length){
+        return buildIntegrityMeta(18, "Low", "OCR", 0, 0, [], []);
+    }
+
+    const map = new Map();
+    for(const candidate of rawCandidates){
+        const key = `${candidate.detectedType || ''}:${candidate.number}`;
+        map.set(key, (map.get(key) || 0) + 1);
+    }
+
+    const sorted = Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+    const [topKey, topCount] = sorted[0];
+    const consensus = rawCandidates.length ? topCount / rawCandidates.length : 0;
+    const topNumber = topKey.split(':')[1] || '';
+    const bestFound = detectTypeAndNumber(texts.join(' '), selectedType) || {};
+    const voteMeta = getDigitVoteMeta(rawCandidates, selectedType);
+    let score = 30 + (consensus * 35);
+    const warnings = [];
+
+    if(bestFound && bestFound.number && topNumber && bestFound.number === topNumber){
+        score += 10;
+    }
+
+    if(voteMeta && voteMeta.number){
+        score += 10 + Math.min(15, voteMeta.positionSupport * 15);
+        if(voteMeta.number === topNumber){
+            score += 8;
+        }
+        warnings.push(...voteMeta.warnings.slice(0, 4));
+    }
+
+    const judgedType = (voteMeta && voteMeta.detectedType) || selectedType;
+    const judgedNumber = (voteMeta && voteMeta.number) || topNumber;
+
+    if(judgedType === 'SS' && /^4\d{8}$/.test(judgedNumber)) score += 8;
+    if(judgedType === 'DR' && /^\d{9}$/.test(judgedNumber)) score += 8;
+    if((judgedType === 'SI' || judgedType === 'EDR') && /^\d{6,12}$/.test(judgedNumber)) score += 8;
+    if(selectedType === 'ANY' && /^\d{6,12}$/.test(judgedNumber)) score += 6;
+
+    let level = 'Low';
+    if(score >= 85) level = 'High';
+    else if(score >= 60) level = 'Medium';
+
+    const values = sorted.slice(0, 3).map(([key, count]) => `${key.split(':')[1]} x${count}`);
+    if(voteMeta && voteMeta.number){
+        values.unshift(`Vote ${voteMeta.number}`);
+    }
+
+    return buildIntegrityMeta(score, level, voteMeta && voteMeta.number ? 'OCR Digit Vote' : 'OCR', topCount, rawCandidates.length, values.slice(0, 4), warnings);
+}
+
+function mergeIntegrity(primary, secondary){
+    if(primary && primary.score >= secondary.score){
+        return primary;
+    }
+    return secondary;
+}
+
+function scoreCandidate(candidate, selectedType){
+    if(!candidate || !candidate.number){
+        return -1;
+    }
+
+    let score = 0;
+    const type = candidate.detectedType || "";
+    const number = String(candidate.number || "");
+
+    if(selectedType === "ANY"){
+        score += 15;
+    }else if(type === selectedType){
+        score += 30;
+    }else {
+        score -= 10;
+    }
+
+    if(/^\d+$/.test(number)){
+        score += 10;
+    }
+
+    if(type === "SS"){
+        if(/^4\d{8}$/.test(number)) score += 40;
+        else if(/^\d{9}$/.test(number)) score += 15;
+    }else if(type === "DR"){
+        if(/^\d{9}$/.test(number)) score += 35;
+    }else if(type === "SI" || type === "EDR"){
+        if(/^\d{6,12}$/.test(number)) score += 25;
+    }
+
+    if(candidate.reason){
+        score += Math.min(10, candidate.reason.length / 20);
+    }
+
+    return score;
+}
+
+function getBestDetectionFromTexts(texts, selectedType){
+    const candidates = [];
+
+    texts.forEach((text, index) => {
+        const found = detectTypeAndNumber(text, selectedType);
+        if(found && found.number){
+            candidates.push({
+                ...found,
+                sourceIndex: index,
+                score: scoreCandidate(found, selectedType)
+            });
+        }
+    });
+
+    if(!candidates.length){
+        return detectTypeAndNumber(texts.find(Boolean) || "", selectedType);
+    }
+
+    const voteMeta = getDigitVoteMeta(candidates, selectedType);
+    if(voteMeta && voteMeta.number){
+        const votedCandidate = {
+            detectedType: voteMeta.detectedType || (selectedType === "ANY" ? "" : selectedType),
+            number: voteMeta.number,
+            reason: voteMeta.reason,
+            score: scoreCandidate({
+                detectedType: voteMeta.detectedType || (selectedType === "ANY" ? "" : selectedType),
+                number: voteMeta.number,
+                reason: voteMeta.reason
+            }, selectedType) + Math.round((voteMeta.positionSupport || 0) * 20)
+        };
+        candidates.push(votedCandidate);
+    }
+
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates[0];
+}
+
+function createProcessedCanvas(sourceCanvas, mode = {}){
+    const scale = mode.scale || 1;
+    const contrast = mode.contrast == null ? 1.45 : mode.contrast;
+    const threshold = mode.threshold;
+    const grayscale = mode.grayscale !== false;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.floor(sourceCanvas.width * scale));
+    canvas.height = Math.max(1, Math.floor(sourceCanvas.height * scale));
+
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    for(let i = 0; i < data.length; i += 4){
+        let r = data[i];
+        let g = data[i + 1];
+        let b = data[i + 2];
+        let value = grayscale ? ((r * 0.299) + (g * 0.587) + (b * 0.114)) : ((r + g + b) / 3);
+
+        value = ((value - 128) * contrast) + 128;
+        value = Math.max(0, Math.min(255, value));
+
+        if(typeof threshold === "number"){
+            value = value >= threshold ? 255 : 0;
+        }
+
+        data[i] = value;
+        data[i + 1] = value;
+        data[i + 2] = value;
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+}
+
+function buildCanvasVariants(baseCanvas){
+    return [
+        { name: "base", canvas: createProcessedCanvas(baseCanvas, { scale: 1.8, contrast: 1.35 }) },
+        { name: "strong", canvas: createProcessedCanvas(baseCanvas, { scale: 2.4, contrast: 1.75 }) },
+        { name: "sharp-light", canvas: createProcessedCanvas(baseCanvas, { scale: 2.8, contrast: 1.9, threshold: 185 }) },
+        { name: "sharp-mid", canvas: createProcessedCanvas(baseCanvas, { scale: 3.0, contrast: 2.0, threshold: 165 }) },
+        { name: "bw-light", canvas: createProcessedCanvas(baseCanvas, { scale: 2.6, contrast: 1.7, threshold: 170 }) },
+        { name: "bw-strong", canvas: createProcessedCanvas(baseCanvas, { scale: 3.2, contrast: 2.15, threshold: 145 }) }
+    ];
+}
+
+async function runOCR(canvas, whitelist, psm){
+    const result = await Tesseract.recognize(canvas, "eng", {
+        tessedit_char_whitelist: whitelist,
+        tessedit_pageseg_mode: psm
+    });
+
+    return {
+        text: normalizeText(result.data.text || ""),
+        confidence: Number(result.data.confidence || 0)
+    };
+}
+
+function getOCRWhitelists(selectedType){
+    const full = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:-./ ";
+    const digitOnly = "0123456789";
+
+    if(selectedType === "EDR" || selectedType === "DR"){
+        return { digitOnly, full: "EDR" + full };
+    }
+
+    if(selectedType === "SI" || selectedType === "SS"){
+        return { digitOnly, full: "SI" + "SS" + full };
+    }
+
+    return { digitOnly, full };
+}
+
+function inferTokenTypeAndNumber(token){
+    const cleanToken = normalizeInvoiceToken(token);
+
+    let match = cleanToken.match(/^SS(4\d{8})$/);
+    if(match){
+        return {
+            detectedType: "SS",
+            number: match[1],
+            reason: "Matched SI No field with SS prefix"
+        };
+    }
+
+    match = cleanToken.match(/^SI(\d{6,12})$/);
+    if(match){
+        const digits = match[1];
+        const preferredNine = digits.match(/(\d{9})$/);
+        return {
+            detectedType: "SI",
+            number: preferredNine ? preferredNine[1] : digits,
+            reason: "Matched SI No field with SI prefix"
+        };
+    }
+
+    match = cleanToken.match(/^EDR(\d{6,12})$/);
+    if(match){
+        return {
+            detectedType: "EDR",
+            number: match[1],
+            reason: "Matched EDR token"
+        };
+    }
+
+    match = cleanToken.match(/^DR(\d{6,12})$/);
+    if(match){
+        return {
+            detectedType: "DR",
+            number: match[1],
+            reason: "Matched DR token"
+        };
+    }
+
+    return null;
+}
+
+function scanInvoiceTokens(clean){
+    const tokenRegex = /SI\s*No\.?\s*[:\-]?\s*([A-Z0-9\-\/]+)/gi;
+    const matches = [...clean.matchAll(tokenRegex)];
+    for(const item of matches){
+        const found = inferTokenTypeAndNumber(item[1]);
+        if(found){
+            return found;
+        }
+    }
+    return null;
+}
+
+function detectEDR(clean){
+    const patterns = [
+        /EDR\s*No\.?\s*[:\-]?\s*(?:EDR)?\s*(\d{6,12})/i,
+        /\bEDR(\d{6,12})\b/i
+    ];
+    for(const regex of patterns){
+        const match = clean.match(regex);
+        if(match){
+            return {
+                detectedType: "EDR",
+                number: match[1],
+                reason: "Matched EDR pattern"
+            };
+        }
+    }
+    return null;
+}
+
+function detectDR(clean){
+    const patterns = [
+        /DR\s*No\.?\s*[:\-]?\s*(?:DR)?\s*(\d{9})/i,
+        /\bDR(\d{9})\b/i
+    ];
+    for(const regex of patterns){
+        const match = clean.match(regex);
+        if(match){
+            return {
+                detectedType: "DR",
+                number: match[1],
+                reason: "Matched DR pattern"
+            };
+        }
+    }
+    return null;
+}
+
+function detectByType(clean, type){
+    if(type === "SI" || type === "SS"){
+        const tokenFound = scanInvoiceTokens(clean);
+        if(tokenFound && tokenFound.detectedType === type){
+            return tokenFound;
+        }
+        return {
+            detectedType: "",
+            number: null,
+            reason: "SI No field found, but prefix did not match the selected type"
+        };
+    }
+
+    if(type === "EDR"){
+        return detectEDR(clean) || {
+            detectedType: "",
+            number: null,
+            reason: "No EDR pattern found"
+        };
+    }
+
+    if(type === "DR"){
+        return detectDR(clean) || {
+            detectedType: "",
+            number: null,
+            reason: "No DR pattern found"
+        };
+    }
+
+    return {
+        detectedType: "",
+        number: null,
+        reason: "Unknown selected type"
+    };
+}
+
+function detectAny(clean){
+    const tokenFound = scanInvoiceTokens(clean);
+    if(tokenFound){
+        return tokenFound;
+    }
+
+    const drFound = detectDR(clean);
+    if(drFound){
+        return drFound;
+    }
+
+    const edrFound = detectEDR(clean);
+    if(edrFound){
+        return edrFound;
+    }
+
+    return {
+        detectedType: "",
+        number: null,
+        reason: "No matching rule found"
+    };
+}
+
+function detectTypeAndNumber(text, selectedType){
+    const clean = normalizeText(text);
+    const found = selectedType === "ANY" ? detectAny(clean) : detectByType(clean, selectedType);
+
+    if(found && found.number){
+        const targetType = found.detectedType || (selectedType === "ANY" ? "" : selectedType);
+        found.number = repairDigitsByType(found.number, targetType);
+    }
+
+    return found;
+}
+
+function extractDetectedYears(text){
+    const clean = normalizeText(text || "");
+    const matches = clean.match(/\b20\d{2}\b/g) || [];
+    const uniqueYears = [...new Set(matches.filter(year => Number(year) >= 2000 && Number(year) <= 2100))];
+    return uniqueYears.sort();
+}
+
+function analyzeYearFlag(text, selectedYear){
+    const yearsFound = extractDetectedYears(text);
+    const selected = String(selectedYear || "").trim();
+
+    if(!yearsFound.length){
+        return {
+            yearsFound: [],
+            hasMismatch: false,
+            note: "No year detected in file"
+        };
+    }
+
+    if(!selected){
+        return {
+            yearsFound,
+            hasMismatch: false,
+            note: `Detected year in file: ${yearsFound.join(", ")}`
+        };
+    }
+
+    const hasSelected = yearsFound.includes(selected);
+    const hasOtherYears = yearsFound.some(year => year !== selected);
+
+    if(!hasSelected){
+        return {
+            yearsFound,
+            hasMismatch: true,
+            note: `Year mismatch, file shows ${yearsFound.join(", ")}, selected year is ${selected}`
+        };
+    }
+
+    if(hasOtherYears){
+        return {
+            yearsFound,
+            hasMismatch: true,
+            note: `Review year, file shows ${yearsFound.join(", ")}, selected year is ${selected}`
+        };
+    }
+
+    return {
+        yearsFound,
+        hasMismatch: false,
+        note: `Year matched, file shows ${selected}`
+    };
+}
+
+function getOutputExtension(file){
+    const lower = file.name.toLowerCase();
+    if(lower.endsWith(".pdf")) return ".pdf";
+    if(lower.endsWith(".jpg")) return ".jpg";
+    if(lower.endsWith(".jpeg")) return ".jpeg";
+    if(lower.endsWith(".png")) return ".png";
+    return ".pdf";
+}
+
+function buildBaseName(number, type, year, ext){
+    return `${number}_${type}${year}${ext}`;
+}
+
+function createFileNameLink(file){
+    const link = document.createElement("a");
+    link.href = "#";
+    link.innerText = file.name;
+    link.className = "filename-link";
+    link.addEventListener("click", function(event){
+        event.preventDefault();
+        openPreviewWindow(file);
+    });
+    return link;
+}
+
+function createPreviewButton(file){
+    const button = document.createElement("a");
+    button.href = "#";
+    button.innerText = "Open";
+    button.className = "preview-button";
+    button.addEventListener("click", function(event){
+        event.preventDefault();
+        openPreviewWindow(file);
+    });
+    return button;
+}
+
+function openPreviewWindow(file){
+    const objectUrl = URL.createObjectURL(file);
+    const title = String(file.name || "Preview").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const isImage = file.type && file.type.startsWith("image/");
+    const viewer = window.open("", "previewWindow", "width=1040,height=780,scrollbars=yes,resizable=yes");
+
+    if(!viewer){
+        alert("Popup window was blocked. Please allow popups for this page.");
+        URL.revokeObjectURL(objectUrl);
+        return;
+    }
+
+    const viewerContent = isImage
+        ? `<img src="${objectUrl}" style="max-width:100%; height:auto; display:block; margin:0 auto; border-radius:16px; box-shadow:0 16px 40px rgba(15,23,42,0.12);">`
+        : `<iframe src="${objectUrl}" style="width:100%; height:calc(100vh - 72px); border:none; border-radius:16px; background:#fff;"></iframe>`;
+
+    viewer.document.open();
+    viewer.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <meta charset="UTF-8">
+        <title>${title}</title>
+        <style>
+        body{margin:0;font-family:Inter,Arial,sans-serif;background:#e5edf7;color:#0f172a;}
+        .topbar{height:72px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;background:linear-gradient(135deg,#0f172a,#1d4ed8);color:#fff;box-sizing:border-box;gap:16px;}
+        .title{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:12px;}
+        .close-btn{background:#fff;color:#0f172a;border:none;border-radius:12px;padding:10px 14px;font-weight:800;cursor:pointer;}
+        .content{height:calc(100vh - 72px);overflow:auto;padding:18px;box-sizing:border-box;}
+        </style>
+        </head>
+        <body>
+            <div class="topbar">
+                <div class="title">${title}</div>
+                <button class="close-btn" onclick="window.close()">Close</button>
+            </div>
+            <div class="content">${viewerContent}</div>
+        </body>
+        </html>
+    `);
+    viewer.document.close();
+    viewer.focus();
+    viewer.addEventListener("beforeunload", function(){
+        URL.revokeObjectURL(objectUrl);
+    }, { once: true });
+}
+
+function createTypeSelect(selectedType){
+    const typeSelect = document.createElement("select");
+    typeSelect.className = "type-select";
+    ["EDR", "SI", "SS", "DR"].forEach(type => {
+        const option = document.createElement("option");
+        option.value = type;
+        option.textContent = type;
+        if(type === selectedType){
+            option.selected = true;
+        }
+        typeSelect.appendChild(option);
+    });
+    return typeSelect;
+}
+
+function isRowExportable(item){
+    return !!(item && item.detectedNumber && item.outputName && item.detectedType);
+}
+
+function buildStatusHTML(item){
+    if(isRowExportable(item)){
+        if(item.yearFlag && item.yearFlag.hasMismatch){
+            return '<span class="badge warning">Ready with Year Flag</span>';
+        }
+        return '<span class="badge success">Ready</span>';
+    }
+    return '<span class="badge fail">Failed</span>';
+}
+
+function buildNotesHTML(item){
+    const parts = [];
+
+    if(item.yearFlag && item.yearFlag.hasMismatch){
+        parts.push(`<span class="note-pill note-year-warning">Year Flag: ${escapeHtml(item.yearFlag.yearsFound.join(", "))}</span>`);
+    }
+
+    if(item.noteMode === "manual"){
+        parts.push('<span class="note-pill note-manual">Manual Review</span>');
+    }else if(item.noteMode === "ocr"){
+        parts.push('<span class="note-pill note-ocr">OCR Result</span>');
+    }
+
+    if(item.integrity && item.integrity.source){
+        parts.push(`<span class="note-pill">Integrity: ${escapeHtml(item.integrity.source)} ${escapeHtml(String(item.integrity.score || 0))}%</span>`);
+    }
+    if(item.integrity && item.integrity.warnings && item.integrity.warnings.length){
+        parts.push(`<span class="note-pill note-manual">Review: ${escapeHtml(item.integrity.warnings.slice(0, 2).join(", "))}</span>`);
+    }
+    const chips = parts.length ? `<div class="stack-notes">${parts.join("")}</div>` : "";
+    const reason = item.reason ? `<div class="reason-text">${escapeHtml(item.reason)}</div>` : "";
+    return chips + reason;
+}
+
+function refreshRowView(item, row){
+    row.classList.toggle("failed-row", !isRowExportable(item));
+    row.cells[4].innerHTML = buildIntegrityHtml(item.integrity);
+    row.cells[5].innerHTML = buildStatusHTML(item);
+    row.cells[7].innerHTML = buildNotesHTML(item);
+    updateSummary();
+}
+
+function refreshRowState(item, row){
+    item.status = isRowExportable(item) ? "Success" : "Failed";
+    refreshRowView(item, row);
+}
+
+function updateAutoOutput(item, outputInput, ext){
+    if(item.detectedNumber){
+        const autoName = buildBaseName(item.detectedNumber, item.detectedType, item.manualYear, ext);
+        outputInput.value = autoName;
+        item.outputName = autoName;
+    }else{
+        outputInput.value = "";
+        item.outputName = "";
+    }
+}
+
+function goToNextDetectedInput(currentInput){
+    const inputs = Array.from(document.querySelectorAll(".detected-number-input"));
+    const index = inputs.indexOf(currentInput);
+    if(index > -1 && index < inputs.length - 1){
+        const nextInput = inputs[index + 1];
+        nextInput.focus();
+        nextInput.select();
+        nextInput.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+}
+
+function attachRowHandlers({row, item, detectedInput, outputInput, typeSelect, ext, defaultReason}){
+    detectedInput.addEventListener("input", function(){
+        item.detectedNumber = detectedInput.value.trim();
+        item.noteMode = item.detectedNumber ? "manual" : "";
+        updateAutoOutput(item, outputInput, ext);
+        item.reason = item.detectedNumber ? "Manual review or OCR result" : defaultReason;
+        refreshRowState(item, row);
+    });
+
+    detectedInput.addEventListener("keydown", function(event){
+        if(event.key === "Enter"){
+            event.preventDefault();
+            goToNextDetectedInput(detectedInput);
+        }
+    });
+
+    typeSelect.addEventListener("change", function(){
+        item.detectedType = typeSelect.value;
+        item.noteMode = item.detectedNumber ? "manual" : item.noteMode;
+        updateAutoOutput(item, outputInput, ext);
+        item.reason = item.detectedNumber ? "Manual type selected" : defaultReason;
+        refreshRowState(item, row);
+    });
+
+    outputInput.addEventListener("input", function(){
+        item.outputName = outputInput.value.trim();
+        refreshRowState(item, row);
+    });
+}
+
+async function ocrPdfPage(page, selectedType){
+    const viewport = page.getViewport({ scale: 2.2 });
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+
+    await page.render({
+        canvasContext: ctx,
+        viewport: viewport
+    }).promise;
+
+    const variants = buildCanvasVariants(canvas);
+    const texts = [];
+    const whitelists = getOCRWhitelists(selectedType);
+
+    for(const variant of variants){
+        const lineResult = await runOCR(variant.canvas, whitelists.full, Tesseract.PSM.SINGLE_BLOCK);
+        if(lineResult.text){
+            texts.push(lineResult.text);
+        }
+
+        const digitResult = await runOCR(variant.canvas, whitelists.digitOnly, Tesseract.PSM.SINGLE_WORD);
+        if(digitResult.text){
+            texts.push(digitResult.text);
+        }
+    }
+
+    return {
+        text: normalizeText(texts.join(" ")),
+        integrity: evaluateIntegrityFromTexts(texts, selectedType)
+    };
+}
+
+async function extractPDFText(file, selectedType){
+    const buffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    let fullText = "";
+
+    for(let p = 1; p <= pdf.numPages; p++){
+        const page = await pdf.getPage(p);
+        try{
+            const content = await page.getTextContent();
+            fullText += " " + content.items.map(i => i.str).join(" ");
+        }catch(err){
+            console.error("PDF text extraction error on page", p, err);
+        }
+    }
+
+    const normalizedFull = normalizeText(fullText);
+    const textResult = detectTypeAndNumber(normalizedFull, selectedType);
+    if(textResult.number){
+        return {
+            text: normalizedFull,
+            integrity: buildIntegrityMeta(96, "High", "PDF Text", 1, 1, [textResult.number])
+        };
+    }
+
+    const candidates = [normalizedFull];
+    let ocrText = "";
+    let bestIntegrity = buildIntegrityMeta(20, "Low", "OCR", 0, 0, []);
+
+    for(let p = 1; p <= Math.min(pdf.numPages, 3); p++){
+        const page = await pdf.getPage(p);
+        const pageOCR = await ocrPdfPage(page, selectedType);
+        ocrText += " " + pageOCR.text;
+        const combined = normalizeText(fullText + " " + ocrText);
+        candidates.push(pageOCR.text, combined);
+        bestIntegrity = mergeIntegrity(bestIntegrity, pageOCR.integrity);
+
+        const found = getBestDetectionFromTexts(candidates, selectedType);
+        if(found && found.number){
+            return {
+                text: normalizeText(candidates.join(" ")),
+                integrity: bestIntegrity
+            };
+        }
+    }
+
+    return {
+        text: normalizeText(candidates.join(" ")),
+        integrity: bestIntegrity
+    };
+}
+
+async function extractImageText(file, selectedType){
+    const imageBitmap = await createImageBitmap(file);
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = imageBitmap.width;
+    canvas.height = imageBitmap.height;
+    ctx.drawImage(imageBitmap, 0, 0);
+
+    const variants = buildCanvasVariants(canvas);
+    const whitelists = getOCRWhitelists(selectedType);
+    const texts = [];
+
+    for(const variant of variants){
+        const fullResult = await runOCR(variant.canvas, whitelists.full, Tesseract.PSM.SINGLE_BLOCK);
+        if(fullResult.text){
+            texts.push(fullResult.text);
+        }
+
+        const digitResult = await runOCR(variant.canvas, whitelists.digitOnly, Tesseract.PSM.SINGLE_WORD);
+        if(digitResult.text){
+            texts.push(digitResult.text);
+        }
+    }
+
+    return {
+        text: normalizeText(texts.join(" ")),
+        integrity: evaluateIntegrityFromTexts(texts, selectedType)
+    };
+}
+
+async function extractText(file, selectedType){
+    if(file.type === "application/pdf"){
+        return await extractPDFText(file, selectedType);
+    }
+    if(file.type.startsWith("image/")){
+        return await extractImageText(file, selectedType);
+    }
+    return {
+        text: "",
+        integrity: buildIntegrityMeta(0, "Low", "Unknown", 0, 0, [])
+    };
+}
+
+function escapeHtml(value){
+    return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+function createResultRow(row, file, found, selectedType, year, errorMessage, yearFlag){
+    const ext = getOutputExtension(file);
+    const isFailure = !found || !found.number;
+    const initialType = (found && found.detectedType) || (selectedType === "ANY" ? "SS" : selectedType);
+    const initialNumber = found && found.number ? found.number : "";
+    const initialReason = errorMessage || (found && found.reason) || "No matching rule found";
+
+    const originalCell = row.insertCell(0);
+    originalCell.appendChild(createFileNameLink(file));
+
+    const previewCell = row.insertCell(1);
+    previewCell.appendChild(createPreviewButton(file));
+
+    const detectedCell = row.insertCell(2);
+    const outputCell = row.insertCell(3);
+    const integrityCell = row.insertCell(4);
+    const statusCell = row.insertCell(5);
+    const typeCell = row.insertCell(6);
+    const reasonCell = row.insertCell(7);
+    reasonCell.classList.add("reason-cell");
+
+    const detectedInput = document.createElement("input");
+    detectedInput.type = "text";
+    detectedInput.value = initialNumber;
+    detectedInput.placeholder = "Enter number";
+    detectedInput.className = "cell-input detected-number-input";
+
+    const outputInput = document.createElement("input");
+    outputInput.type = "text";
+    outputInput.value = initialNumber ? buildBaseName(initialNumber, initialType, year, ext) : "";
+    outputInput.placeholder = "Output name";
+    outputInput.className = "output-input";
+
+    if(found && found.number && found.detectedType){
+        outputInput.value = buildBaseName(found.number, found.detectedType, year, ext);
+    }
+
+    const typeSelect = createTypeSelect(initialType);
+
+    detectedCell.appendChild(detectedInput);
+    outputCell.appendChild(outputInput);
+    typeCell.appendChild(typeSelect);
+
+    const resultItem = {
+        originalFile: file.name,
+        detectedNumber: detectedInput.value.trim(),
+        outputName: outputInput.value.trim(),
+        integrity: (found && found.integrity) || buildIntegrityMeta(isFailure ? 20 : 70, isFailure ? "Low" : "Medium", "OCR", 0, 0, []),
+        status: isFailure ? "Failed" : "Success",
+        detectedType: typeSelect.value,
+        reason: initialReason,
+        manualYear: year,
+        fileRef: file,
+        yearFlag: yearFlag || { yearsFound: [], hasMismatch: false, note: "" },
+        noteMode: found && found.number ? "ocr" : ""
+    };
+
+    if(resultItem.yearFlag && resultItem.yearFlag.note){
+        resultItem.reason = `${initialReason}. ${resultItem.yearFlag.note}`;
+    }
+
+    attachRowHandlers({
+        row,
+        item: resultItem,
+        detectedInput,
+        outputInput,
+        typeSelect,
+        ext,
+        defaultReason: initialReason
+    });
+
+    refreshRowState(resultItem, row);
+    return resultItem;
+}
+
+async function startProcess(){
+    if(isProcessing){
+        alert("Processing is already running.");
+        return;
+    }
+
+    const table = getTableBody();
+    const selectedType = document.getElementById("docType").value;
+    const year = document.getElementById("fileYear").value.trim();
+
+    table.innerHTML = "";
+    results = [];
+    updateSummary();
+
+    if(files.length === 0){
+        renderEmptyState();
+        alert("Please upload files first.");
+        return;
+    }
+
+    isProcessing = true;
+
+    try{
+        for(let i = 0; i < files.length; i++){
+            const file = files[i];
+            const row = table.insertRow();
+            row.insertCell(0).innerText = file.name;
+            row.insertCell(1).innerText = "Open";
+            row.insertCell(2).innerText = "";
+            row.insertCell(3).innerText = "";
+            row.insertCell(4).innerHTML = '<span class="integrity-badge integrity-empty">Checking</span>';
+            row.insertCell(5).innerHTML = '<span class="badge scan">Scanning</span>';
+            row.insertCell(6).innerText = "";
+            row.insertCell(7).innerText = "";
+            row.cells[7].classList.add("reason-cell");
+
+            try{
+                setProgress(((i) / files.length) * 100, `Processing ${i + 1} of ${files.length}: ${file.name}`);
+
+                const extraction = await extractText(file, selectedType);
+                const text = extraction.text || "";
+                const found = detectTypeAndNumber(text, selectedType);
+                if(found){
+                    found.integrity = extraction.integrity;
+                }
+                const yearFlag = analyzeYearFlag(text, year);
+
+                row.innerHTML = "";
+                const resultItem = createResultRow(row, file, found, selectedType, year, "", yearFlag);
+                results.push(resultItem);
+            }catch(err){
+                console.error(err);
+                row.innerHTML = "";
+                const resultItem = createResultRow(
+                    row,
+                    file,
+                    null,
+                    selectedType,
+                    year,
+                    err.message || "Unexpected processing error",
+                    { yearsFound: [], hasMismatch: false, note: "Year check unavailable due to processing error" }
+                );
+                results.push(resultItem);
+            }
+
+            setProgress((((i + 1) / files.length) * 100), `Processing ${i + 1} of ${files.length}: ${file.name}`);
+            updateSummary();
+        }
+
+        setProgress(100, `Completed. Processed ${files.length} file(s).`);
+    }finally{
+        isProcessing = false;
+        renderEmptyState();
+    }
+}
+
+async function downloadZip(){
+    if(results.length === 0){
+        alert("Please process files first.");
+        return;
+    }
+
+    const exportZip = new JSZip();
+    const usedNames = {};
+
+    for(const item of results){
+        if(!isRowExportable(item) || !item.fileRef) continue;
+
+        let targetName = item.outputName.trim();
+        const dotIndex = targetName.lastIndexOf(".");
+        const base = dotIndex > -1 ? targetName.slice(0, dotIndex) : targetName;
+        const ext = dotIndex > -1 ? targetName.slice(dotIndex) : getOutputExtension(item.fileRef);
+
+        if(!usedNames[targetName]){
+            usedNames[targetName] = 1;
+        }else{
+            const count = usedNames[targetName];
+            usedNames[targetName] = count + 1;
+            targetName = `${base} (${count})${ext}`;
+        }
+
+        exportZip.file(targetName, item.fileRef);
+    }
+
+    const blob = await exportZip.generateAsync({type:"blob"});
+    saveAs(blob, "RENAMED_FILES.zip");
+}
+
+function downloadExcel(){
+    if(results.length === 0){
+        alert("Please process files first.");
+        return;
+    }
+
+    const excelRows = results.map(item => ({
+        originalFile: item.originalFile,
+        detectedNumber: item.detectedNumber,
+        outputName: item.outputName,
+        status: item.status,
+        detectedType: item.detectedType,
+        integrity: item.integrity ? `${item.integrity.level} ${item.integrity.score}%` : "",
+        integritySource: item.integrity && item.integrity.source ? item.integrity.source : "",
+        detectedYears: item.yearFlag && item.yearFlag.yearsFound ? item.yearFlag.yearsFound.join(", ") : "",
+        yearFlag: item.yearFlag && item.yearFlag.hasMismatch ? "Yes" : "No",
+        reason: item.reason
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(excelRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Rename Results");
+    XLSX.writeFile(wb, "Rename_Report.xlsx");
+}
+
+renderEmptyState();
+</script>
+<br>
+<footer style="text-align: center;">
+    © 2026 Pro Studios. All rights reserved.
+</footer>
+</body>
+</html>
