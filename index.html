@@ -562,6 +562,7 @@ tbody tr:hover td{
                 <div class="note-chip">Press Enter inside Detected Number to jump to the next row</div>
                 <div class="note-chip">Rows stay editable before export</div>
                 <div class="note-chip">Detected years are checked against the selected year</div>
+                <div class="note-chip">Low-confidence or ambiguous OCR must be reviewed before export</div>
             </div>
 
             <div class="summary-grid">
@@ -605,6 +606,7 @@ tbody tr:hover td{
                     </div>
                     <div class="legend">
                         <div class="legend-chip">Ready</div>
+                        <div class="legend-chip">Needs Review</div>
                         <div class="legend-chip">Failed</div>
                         <div class="legend-chip">Year Flag</div>
                     </div>
@@ -766,13 +768,11 @@ function generateDigitConfusionVariants(digits, maxChanges = 1){
         "2": ["8"],
         "5": ["6"],
         "6": ["5"],
-        "8": ["2"],
-        "S": ["5"],
-        "B": ["8"]
+        "8": ["2"]
     };
 
     const seed = String(digits || "");
-    const results = new Set([seed]);
+    const variants = new Set([seed]);
 
     function walk(current, startIndex, changesLeft){
         if(changesLeft <= 0){
@@ -783,8 +783,8 @@ function generateDigitConfusionVariants(digits, maxChanges = 1){
             const alternatives = confusionMap[current[i]] || [];
             for(const alt of alternatives){
                 const next = current.slice(0, i) + alt + current.slice(i + 1);
-                if(!results.has(next)){
-                    results.add(next);
+                if(!variants.has(next)){
+                    variants.add(next);
                     walk(next, i + 1, changesLeft - 1);
                 }
             }
@@ -792,7 +792,7 @@ function generateDigitConfusionVariants(digits, maxChanges = 1){
     }
 
     walk(seed, 0, maxChanges);
-    return Array.from(results);
+    return Array.from(variants);
 }
 
 function chooseBestDigitCandidate(digits, type){
@@ -830,18 +830,10 @@ function chooseBestDigitCandidate(digits, type){
         for(let i = 0; i < clean.length; i++){
             if(clean[i] !== original[i]){
                 changedCount += 1;
-
-                if(original[i] === "6" && clean[i] === "5"){
-                    score -= 5;
-                }
-                if(original[i] === "5" && clean[i] === "6"){
-                    score -= 2;
-                }
             }
         }
 
         score -= changedCount * 3;
-
         candidates.push({ clean, score });
     }
 
@@ -853,39 +845,40 @@ function chooseBestDigitCandidate(digits, type){
 }
 
 function repairDigitsByType(value, type){
-    let digits = chooseBestDigitCandidate(onlyDigits(value), type);
+    const digits = onlyDigits(value);
 
     if(!digits){
         return "";
     }
 
     if(type === "SS"){
-        if(digits.length === 8){
-            digits = "4" + digits;
+        const exactGroups = digits.match(/4\d{8}/g);
+        if(exactGroups && exactGroups.length === 1){
+            return exactGroups[0];
         }
-        if(digits.length === 9 && digits[0] !== "4"){
-            digits = "4" + digits.slice(1);
-        }
-        if(digits.length > 9){
-            const nineGroups = digits.match(/4\d{8}/g);
-            if(nineGroups && nineGroups.length){
-                return nineGroups[0];
-            }
-            digits = digits.slice(-9);
-            if(digits[0] !== "4"){
-                digits = "4" + digits.slice(1);
-            }
-        }
+        return digits;
     }
 
     if(type === "DR"){
-        const nineGroups = digits.match(/\d{9}/g);
-        if(nineGroups && nineGroups.length){
-            return nineGroups[0];
+        const exactGroups = digits.match(/\d{9}/g);
+        if(exactGroups && exactGroups.length === 1){
+            return exactGroups[0];
         }
     }
 
     return digits;
+}
+
+function isStructurallyValidNumber(number, type){
+    const value = String(number || "").trim();
+    if(!/^\d+$/.test(value)){
+        return false;
+    }
+
+    if(type === "SS") return /^4\d{8}$/.test(value);
+    if(type === "DR") return /^\d{9}$/.test(value);
+    if(type === "SI" || type === "EDR") return /^\d{6,12}$/.test(value);
+    return /^\d{6,12}$/.test(value);
 }
 
 function buildIntegrityMeta(score, level, source, matchedCount, candidateCount, values, warnings){
@@ -976,6 +969,7 @@ function getDigitVoteMeta(candidates, selectedType){
 
     const votedDigits = [];
     const warnings = [];
+    const ambiguousPositions = [];
     let supportedPositions = 0;
 
     for(let index = 0; index < targetLength; index++){
@@ -989,30 +983,45 @@ function getDigitVoteMeta(candidates, selectedType){
 
         const sortedDigits = Array.from(digitCounts.entries()).sort((a, b) => b[1] - a[1]);
         if(!sortedDigits.length){
-            votedDigits.push("0");
+            votedDigits.push("?");
+            ambiguousPositions.push(index + 1);
             warnings.push(`P${index + 1} unclear`);
             continue;
         }
 
         const [topDigit, topCount] = sortedDigits[0];
         const secondCount = sortedDigits[1] ? sortedDigits[1][1] : 0;
+
+        if(secondCount > 0 && topCount === secondCount){
+            votedDigits.push("?");
+            ambiguousPositions.push(index + 1);
+            warnings.push(`P${index + 1} tied: ${sortedDigits.map(([digit, count]) => `${digit}x${count}`).join("/")}`);
+            continue;
+        }
+
         votedDigits.push(topDigit);
-        supportedPositions += topCount;
+        supportedPositions += topCount / pool.length;
 
         if(secondCount > 0){
             warnings.push(`P${index + 1}: ${sortedDigits.map(([digit, count]) => `${digit}x${count}`).join("/")}`);
         }
     }
 
-    let votedNumber = votedDigits.join("");
-    if(votedNumber){
-        votedNumber = repairDigitsByType(votedNumber, dominantType || selectedType);
-    }
+    const candidateNumber = votedDigits.join("");
+    const hasAmbiguity = ambiguousPositions.length > 0;
+    const votedNumber = hasAmbiguity
+        ? null
+        : repairDigitsByType(candidateNumber, dominantType || selectedType);
 
     return {
         detectedType: dominantType,
         number: votedNumber,
-        reason: `Digit voting from ${pool.length} OCR passes`,
+        candidateNumber,
+        hasAmbiguity,
+        ambiguousPositions,
+        reason: hasAmbiguity
+            ? `Digit voting found unresolved positions from ${pool.length} OCR passes`
+            : `Digit voting from ${pool.length} OCR passes`,
         voteCount: pool.length,
         targetLength,
         warnings,
@@ -1063,6 +1072,11 @@ function evaluateIntegrityFromTexts(texts, selectedType){
         warnings.push(...voteMeta.warnings.slice(0, 4));
     }
 
+    if(voteMeta && voteMeta.hasAmbiguity){
+        score = Math.min(score, 55);
+        warnings.push(...voteMeta.warnings.slice(0, 4));
+    }
+
     const judgedType = (voteMeta && voteMeta.detectedType) || selectedType;
     const judgedNumber = (voteMeta && voteMeta.number) || topNumber;
 
@@ -1078,9 +1092,11 @@ function evaluateIntegrityFromTexts(texts, selectedType){
     const values = sorted.slice(0, 3).map(([key, count]) => `${key.split(':')[1]} x${count}`);
     if(voteMeta && voteMeta.number){
         values.unshift(`Vote ${voteMeta.number}`);
+    }else if(voteMeta && voteMeta.candidateNumber){
+        values.unshift(`Unresolved ${voteMeta.candidateNumber}`);
     }
 
-    return buildIntegrityMeta(score, level, voteMeta && voteMeta.number ? 'OCR Digit Vote' : 'OCR', topCount, rawCandidates.length, values.slice(0, 4), warnings);
+    return buildIntegrityMeta(score, level, voteMeta ? 'OCR Digit Vote' : 'OCR', topCount, rawCandidates.length, values.slice(0, 4), warnings);
 }
 
 function mergeIntegrity(primary, secondary){
@@ -1555,8 +1571,26 @@ function createTypeSelect(selectedType){
     return typeSelect;
 }
 
+function needsOcrReview(item){
+    if(!item || item.noteMode !== "ocr"){
+        return false;
+    }
+    const integrity = item.integrity;
+    if(!integrity){
+        return true;
+    }
+    return integrity.level === "Low" || Number(integrity.score || 0) < 60;
+}
+
 function isRowExportable(item){
-    return !!(item && item.detectedNumber && item.outputName && item.detectedType);
+    return !!(
+        item &&
+        item.detectedNumber &&
+        item.outputName &&
+        item.detectedType &&
+        isStructurallyValidNumber(item.detectedNumber, item.detectedType) &&
+        !needsOcrReview(item)
+    );
 }
 
 function buildStatusHTML(item){
@@ -1565,6 +1599,12 @@ function buildStatusHTML(item){
             return '<span class="badge warning">Ready with Year Flag</span>';
         }
         return '<span class="badge success">Ready</span>';
+    }
+    if(item && item.detectedNumber && !isStructurallyValidNumber(item.detectedNumber, item.detectedType)){
+        return '<span class="badge fail">Invalid Number</span>';
+    }
+    if(needsOcrReview(item)){
+        return '<span class="badge warning">Needs Review</span>';
     }
     return '<span class="badge fail">Failed</span>';
 }
@@ -1602,12 +1642,16 @@ function refreshRowView(item, row){
 }
 
 function refreshRowState(item, row){
-    item.status = isRowExportable(item) ? "Success" : "Failed";
+    item.status = isRowExportable(item) ? "Success" : (needsOcrReview(item) ? "Needs Review" : "Failed");
     refreshRowView(item, row);
 }
 
 function updateAutoOutput(item, outputInput, ext){
-    if(item.detectedNumber){
+    if(
+        item.detectedNumber &&
+        isStructurallyValidNumber(item.detectedNumber, item.detectedType) &&
+        !needsOcrReview(item)
+    ){
         const autoName = buildBaseName(item.detectedNumber, item.detectedType, item.manualYear, ext);
         outputInput.value = autoName;
         item.outputName = autoName;
@@ -1802,6 +1846,9 @@ function createResultRow(row, file, found, selectedType, year, errorMessage, yea
     const initialType = (found && found.detectedType) || (selectedType === "ANY" ? "SS" : selectedType);
     const initialNumber = found && found.number ? found.number : "";
     const initialReason = errorMessage || (found && found.reason) || "No matching rule found";
+    const initialIntegrity = (found && found.integrity) || buildIntegrityMeta(isFailure ? 20 : 70, isFailure ? "Low" : "Medium", "OCR", 0, 0, []);
+    const initialNeedsReview = !isFailure && (initialIntegrity.level === "Low" || Number(initialIntegrity.score || 0) < 60);
+    const initialCanAutoName = initialNumber && isStructurallyValidNumber(initialNumber, initialType) && !initialNeedsReview;
 
     const originalCell = row.insertCell(0);
     originalCell.appendChild(createFileNameLink(file));
@@ -1825,13 +1872,9 @@ function createResultRow(row, file, found, selectedType, year, errorMessage, yea
 
     const outputInput = document.createElement("input");
     outputInput.type = "text";
-    outputInput.value = initialNumber ? buildBaseName(initialNumber, initialType, year, ext) : "";
-    outputInput.placeholder = "Output name";
+    outputInput.value = initialCanAutoName ? buildBaseName(initialNumber, initialType, year, ext) : "";
+    outputInput.placeholder = initialNeedsReview ? "Review number first" : "Output name";
     outputInput.className = "output-input";
-
-    if(found && found.number && found.detectedType){
-        outputInput.value = buildBaseName(found.number, found.detectedType, year, ext);
-    }
 
     const typeSelect = createTypeSelect(initialType);
 
@@ -1843,8 +1886,8 @@ function createResultRow(row, file, found, selectedType, year, errorMessage, yea
         originalFile: file.name,
         detectedNumber: detectedInput.value.trim(),
         outputName: outputInput.value.trim(),
-        integrity: (found && found.integrity) || buildIntegrityMeta(isFailure ? 20 : 70, isFailure ? "Low" : "Medium", "OCR", 0, 0, []),
-        status: isFailure ? "Failed" : "Success",
+        integrity: initialIntegrity,
+        status: isFailure ? "Failed" : (initialNeedsReview ? "Needs Review" : "Success"),
         detectedType: typeSelect.value,
         reason: initialReason,
         manualYear: year,
@@ -2002,6 +2045,48 @@ function downloadExcel(){
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Rename Results");
     XLSX.writeFile(wb, "Rename_Report.xlsx");
+}
+
+function runOcrSafetyRegressionTests(){
+    const tieVote = getDigitVoteMeta([
+        { detectedType: "DR", number: "123456789" },
+        { detectedType: "DR", number: "123556789" }
+    ], "DR");
+
+    const cases = [
+        { name: "SS valid 9-digit number", expected: true, actual: isStructurallyValidNumber("412345678", "SS") },
+        { name: "SS wrong prefix rejected", expected: false, actual: isStructurallyValidNumber("512345678", "SS") },
+        { name: "DR valid 9-digit number", expected: true, actual: isStructurallyValidNumber("123456789", "DR") },
+        { name: "Letter I is not accepted as digit 1", expected: false, actual: isStructurallyValidNumber("123I56789", "DR") },
+        { name: "Letter l is not accepted as digit 1", expected: false, actual: isStructurallyValidNumber("123l56789", "DR") },
+        { name: "Repair does not change 5 into 6", expected: "412355678", actual: repairDigitsByType("412355678", "SS") },
+        { name: "Repair does not invent missing SS leading 4", expected: "12345678", actual: repairDigitsByType("12345678", "SS") },
+        { name: "Tied OCR position remains unresolved", expected: null, actual: tieVote ? tieVote.number : undefined },
+        { name: "Tied OCR position is visibly marked", expected: "123?56789", actual: tieVote ? tieVote.candidateNumber : undefined }
+    ];
+
+    const results = cases.map(test => ({
+        ...test,
+        passed: Object.is(test.expected, test.actual)
+    }));
+    const passed = results.filter(test => test.passed).length;
+
+    console.group(`OCR safety regression tests: ${passed}/${results.length} passed`);
+    console.table(results);
+    console.groupEnd();
+
+    return {
+        passed,
+        total: results.length,
+        ok: passed === results.length,
+        results
+    };
+}
+
+window.runOcrSafetyRegressionTests = runOcrSafetyRegressionTests;
+
+if(new URLSearchParams(window.location.search).get("selftest") === "1"){
+    setTimeout(runOcrSafetyRegressionTests, 0);
 }
 
 renderEmptyState();
